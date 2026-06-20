@@ -6,11 +6,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
+      '/login': { target: 'http://localhost:8000', changeOrigin: true },
+      '/register': { target: 'http://localhost:8000', changeOrigin: true },
+      '/logout': { target: 'http://localhost:8000', changeOrigin: true },
+      '/me': { target: 'http://localhost:8000', changeOrigin: true },
+      '/features': { target: 'http://localhost:8000', changeOrigin: true },
+      '/runs': { target: 'http://localhost:8000', changeOrigin: true },
+      '/health': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },
 })
