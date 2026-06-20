@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/features" class="back">← Back to features</a>
+
+<!-- Feature header -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <h1>{{ feature.name }}</h1>
+      <p class="subtitle" style="margin-top:6px;">{{ feature.description or "No description." }}</p>
+    </div>
+    {% if cases|length >= 1 and rubric %}
+    <form method="post" action="/features/{{ feature.id }}/run">
+      <button class="btn btn-run" type="submit">▶ Run Eval</button>
+    </form>
+    {% else %}
+    <span class="muted" style="font-size:12px;padding-top:4px;">Add cases + rubric to run</span>
+    {% endif %}
+  </div>
+
+  {% if runs %}
+  <div class="stats" style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+    <div class="stat">
+      <div class="stat-value">{{ cases|length }}</div>
+      <div class="stat-label">Golden cases</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value">{{ runs|length }}</div>
+      <div class="stat-label">Runs</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Golden Cases -->
+<div class="card">
+  <div class="card-header" style="margin-bottom:{% if cases %}16px{% else %}0{% endif %};">
+    <h2>Golden Cases <span class="muted" style="font-weight:400;">({{ cases|length }})</span></h2>
+    <a href="/features/{{ feature.id }}/cases/new" class="btn btn-secondary btn-sm">+ Add Case</a>
+  </div>
+
+  {% if cases %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:32px;">#</th>
+        <th>Input</th>
+        <th>Expected Output</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td class="muted">{{ loop.index }}</td>
+        <td style="white-space:pre-wrap;color:var(--text2);">{{ c.input }}</td>
+        <td style="white-space:pre-wrap;color:var(--text2);">{{ c.expected_output }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty" style="padding:28px 0;">
+    <p>No cases yet — add at least 5 before running an eval.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Rubric -->
+<div class="card">
+  <div class="card-header" style="margin-bottom:{% if rubric %}16px{% else %}0{% endif %};">
+    <h2>Rubric</h2>
+    <a href="/features/{{ feature.id }}/rubric" class="btn btn-secondary btn-sm">
+      {% if rubric %}Edit{% else %}+ Add Rubric{% endif %}
+    </a>
+  </div>
+  {% if rubric %}
+  <pre>{{ rubric.dimensions_text }}</pre>
+  {% else %}
+  <div class="empty" style="padding:28px 0;">
+    <p>No rubric yet — define grading criteria before running.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Runs -->
+<div class="card">
+  <div class="card-header" style="margin-bottom:{% if runs %}16px{% else %}0{% endif %};">
+    <h2>Run History</h2>
+  </div>
+
+  {% if runs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td><span class="badge badge-neutral">Run #{{ runs|length - loop.index0 }}</span></td>
+        <td class="muted">{{ r.created_at[:16] }}</td>
+        <td><a href="/runs/{{ r.id }}" class="btn btn-ghost btn-sm">View results →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty" style="padding:28px 0;">
+    <p>No runs yet. Add cases and a rubric, then hit Run Eval.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
