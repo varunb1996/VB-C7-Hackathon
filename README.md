@@ -32,10 +32,11 @@ Not a benchmark. Not a dashboard. A list of the places your own AI is wrong and 
 
 ## Stack
 
-- **Backend:** FastAPI + SQLite
-- **Frontend:** Jinja2 HTML templates (served by FastAPI)
+- **Backend:** FastAPI + PostgreSQL (Supabase)
+- **Frontend:** React + Vite + Tailwind CSS
 - **LLM grader:** owl-alpha via OpenRouter
-- **Auth:** JWT-based user accounts with user-scoped data isolation
+- **Auth:** JWT stored in httponly cookies, bcrypt password hashing, user-scoped data isolation
+- **Deployment:** Docker on Render.com
 
 ---
 
@@ -51,11 +52,40 @@ Not a benchmark. Not a dashboard. A list of the places your own AI is wrong and 
 
 ---
 
+## How to use the app
+
+1. **Register** — create an account with your email and password
+2. **Create a feature** — name and describe the AI feature you want to evaluate
+3. **Add 5 golden cases** — for each case, provide an input and the expected perfect output
+4. **Write a rubric** — describe what "good" looks like (e.g. "mentions score", "no hallucinated facts")
+5. **Run an eval** — paste your AI's actual outputs for each case and submit
+6. **See results** — the LLM judge scores each case pass/fail with a one-line reason
+7. **Improve and re-run** — tweak your AI prompt, run again, compare
+
+---
+
 ## Running locally
 
 ```bash
+# Backend
 pip install -r requirements.txt
+export DATABASE_URL=your_supabase_connection_string
+export OPENROUTER_API_KEY=your_openrouter_key
 uvicorn app.main:app --reload
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
-Open `http://localhost:8000`
+Open `http://localhost:5173`
+
+---
+
+## Deployment
+
+Deployed on Render.com using Docker. The `render.yaml` in the repo defines the service configuration. Required environment variables on Render:
+
+- `DATABASE_URL` — Supabase PostgreSQL connection pooler URI
+- `OPENROUTER_API_KEY` — OpenRouter API key
