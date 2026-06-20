@@ -89,3 +89,4 @@ Deployed on Render.com using Docker. The `render.yaml` in the repo defines the s
 
 - `DATABASE_URL` — Supabase PostgreSQL connection pooler URI
 - `OPENROUTER_API_KEY` — OpenRouter API key
+https://vb-c7-hackathon.onrender.com/
