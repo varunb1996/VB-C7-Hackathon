@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, Request
+import psycopg2.extras
 from app.db import get_conn
 
 SECRET_KEY = "eval-copilot-secret-change-in-prod"
@@ -25,14 +26,16 @@ def create_token(user_id: int) -> str:
 def register_user(email: str, password: str) -> dict:
     conn = get_conn()
     try:
-        cur = conn.execute(
-            "INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id, email",
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id, email",
             (email, hash_password(password))
         )
         user = dict(cur.fetchone())
         conn.commit()
         return user
     except Exception:
+        conn.rollback()
         raise HTTPException(status_code=400, detail="Email already registered")
     finally:
         conn.close()
@@ -40,7 +43,9 @@ def register_user(email: str, password: str) -> dict:
 
 def login_user(email: str, password: str) -> str:
     conn = get_conn()
-    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    row = cur.fetchone()
     conn.close()
     if not row or not verify_password(password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -57,7 +62,9 @@ def get_current_user(request: Request) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid session")
     conn = get_conn()
-    row = conn.execute("SELECT id, email FROM users WHERE id = ?", (user_id,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=401, detail="User not found")

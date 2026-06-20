@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+import psycopg2.extras
 
 from app.db import get_conn
 from app.auth import get_current_user
@@ -23,9 +24,15 @@ class RunIn(BaseModel):
     actual_outputs: dict  # {case_id: actual_output_text}
 
 
+def cur(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+
 def own_feature(feature_id: int, user: dict) -> dict:
     conn = get_conn()
-    row = conn.execute("SELECT * FROM features WHERE id = ? AND user_id = ?", (feature_id, user["id"])).fetchone()
+    c = cur(conn)
+    c.execute("SELECT * FROM features WHERE id = %s AND user_id = %s", (feature_id, user["id"]))
+    row = c.fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -35,7 +42,9 @@ def own_feature(feature_id: int, user: dict) -> dict:
 @router.get("/features")
 def list_features(user: dict = Depends(get_current_user)):
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM features WHERE user_id = ? ORDER BY created_at DESC", (user["id"],)).fetchall()
+    c = cur(conn)
+    c.execute("SELECT * FROM features WHERE user_id = %s ORDER BY created_at DESC", (user["id"],))
+    rows = c.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -43,11 +52,12 @@ def list_features(user: dict = Depends(get_current_user)):
 @router.post("/features")
 def create_feature(body: FeatureIn, user: dict = Depends(get_current_user)):
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO features (user_id, name, description) VALUES (?, ?, ?) RETURNING *",
+    c = cur(conn)
+    c.execute(
+        "INSERT INTO features (user_id, name, description) VALUES (%s, %s, %s) RETURNING *",
         (user["id"], body.name.strip(), body.description.strip())
     )
-    feature = dict(cur.fetchone())
+    feature = dict(c.fetchone())
     conn.commit()
     conn.close()
     return feature
@@ -57,11 +67,12 @@ def create_feature(body: FeatureIn, user: dict = Depends(get_current_user)):
 def add_case(feature_id: int, body: CaseIn, user: dict = Depends(get_current_user)):
     own_feature(feature_id, user)
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO golden_cases (feature_id, input, expected_output) VALUES (?, ?, ?) RETURNING *",
+    c = cur(conn)
+    c.execute(
+        "INSERT INTO golden_cases (feature_id, input, expected_output) VALUES (%s, %s, %s) RETURNING *",
         (feature_id, body.input.strip(), body.expected_output.strip())
     )
-    case = dict(cur.fetchone())
+    case = dict(c.fetchone())
     conn.commit()
     conn.close()
     return case
@@ -71,37 +82,37 @@ def add_case(feature_id: int, body: CaseIn, user: dict = Depends(get_current_use
 def save_rubric(feature_id: int, body: RubricIn, user: dict = Depends(get_current_user)):
     own_feature(feature_id, user)
     conn = get_conn()
-    conn.execute(
-        """INSERT INTO rubrics (feature_id, dimensions_text) VALUES (?, ?)
-           ON CONFLICT(feature_id) DO UPDATE SET dimensions_text=excluded.dimensions_text""",
+    c = cur(conn)
+    c.execute(
+        """INSERT INTO rubrics (feature_id, dimensions_text) VALUES (%s, %s)
+           ON CONFLICT (feature_id) DO UPDATE SET dimensions_text = EXCLUDED.dimensions_text""",
         (feature_id, body.dimensions_text.strip())
     )
     conn.commit()
-    row = conn.execute("SELECT * FROM rubrics WHERE feature_id = ?", (feature_id,)).fetchone()
+    c.execute("SELECT * FROM rubrics WHERE feature_id = %s", (feature_id,))
+    row = dict(c.fetchone())
     conn.close()
-    return dict(row)
+    return row
 
 
 @router.post("/features/{feature_id}/run")
 def run_eval(feature_id: int, body: RunIn, user: dict = Depends(get_current_user)):
     own_feature(feature_id, user)
     conn = get_conn()
+    c = cur(conn)
 
-    cases = conn.execute(
-        "SELECT * FROM golden_cases WHERE feature_id = ? ORDER BY id", (feature_id,)
-    ).fetchall()
-    rubric = conn.execute(
-        "SELECT * FROM rubrics WHERE feature_id = ?", (feature_id,)
-    ).fetchone()
+    c.execute("SELECT * FROM golden_cases WHERE feature_id = %s ORDER BY id", (feature_id,))
+    cases = c.fetchall()
+    c.execute("SELECT * FROM rubrics WHERE feature_id = %s", (feature_id,))
+    rubric = c.fetchone()
 
     if not cases:
         raise HTTPException(status_code=400, detail="No golden cases found")
     if not rubric:
         raise HTTPException(status_code=400, detail="No rubric found")
 
-    run_id = conn.execute(
-        "INSERT INTO runs (feature_id) VALUES (?) RETURNING id", (feature_id,)
-    ).fetchone()["id"]
+    c.execute("INSERT INTO runs (feature_id) VALUES (%s) RETURNING id", (feature_id,))
+    run_id = c.fetchone()["id"]
     conn.commit()
 
     grades = []
@@ -112,9 +123,9 @@ def run_eval(feature_id: int, body: RunIn, user: dict = Depends(get_current_user
             expected_output=case["expected_output"],
             actual_output=actual_output,
         )
-        conn.execute(
+        c.execute(
             """INSERT INTO grades (run_id, golden_case_id, actual_output, verdict, reasoning)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (run_id, case["id"], actual_output, result["verdict"], result["reasoning"])
         )
         grades.append(result)
@@ -127,27 +138,29 @@ def run_eval(feature_id: int, body: RunIn, user: dict = Depends(get_current_user
 @router.get("/runs/{run_id}")
 def get_run(run_id: int, user: dict = Depends(get_current_user)):
     conn = get_conn()
-    run = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+    c = cur(conn)
+    c.execute("SELECT * FROM runs WHERE id = %s", (run_id,))
+    run = c.fetchone()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Verify ownership via feature
-    feature = conn.execute(
-        "SELECT * FROM features WHERE id = ? AND user_id = ?",
+    c.execute(
+        "SELECT * FROM features WHERE id = %s AND user_id = %s",
         (run["feature_id"], user["id"])
-    ).fetchone()
+    )
+    feature = c.fetchone()
     if not feature:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    grades = conn.execute(
-        """SELECT g.*, c.input, c.expected_output
-           FROM grades g JOIN golden_cases c ON g.golden_case_id = c.id
-           WHERE g.run_id = ? ORDER BY c.id""",
+    c.execute(
+        """SELECT g.*, gc.input, gc.expected_output
+           FROM grades g JOIN golden_cases gc ON g.golden_case_id = gc.id
+           WHERE g.run_id = %s ORDER BY gc.id""",
         (run_id,)
-    ).fetchall()
+    )
+    grades_list = [dict(g) for g in c.fetchall()]
     conn.close()
 
-    grades_list = [dict(g) for g in grades]
     passed = sum(1 for g in grades_list if g["verdict"] == "pass")
     return {
         "run": dict(run),
@@ -161,9 +174,13 @@ def get_run(run_id: int, user: dict = Depends(get_current_user)):
 def get_feature(feature_id: int, user: dict = Depends(get_current_user)):
     feature = own_feature(feature_id, user)
     conn = get_conn()
-    cases = conn.execute("SELECT * FROM golden_cases WHERE feature_id = ? ORDER BY id", (feature_id,)).fetchall()
-    rubric = conn.execute("SELECT * FROM rubrics WHERE feature_id = ?", (feature_id,)).fetchone()
-    runs = conn.execute("SELECT * FROM runs WHERE feature_id = ? ORDER BY created_at DESC", (feature_id,)).fetchall()
+    c = cur(conn)
+    c.execute("SELECT * FROM golden_cases WHERE feature_id = %s ORDER BY id", (feature_id,))
+    cases = c.fetchall()
+    c.execute("SELECT * FROM rubrics WHERE feature_id = %s", (feature_id,))
+    rubric = c.fetchone()
+    c.execute("SELECT * FROM runs WHERE feature_id = %s ORDER BY created_at DESC", (feature_id,))
+    runs = c.fetchall()
     conn.close()
     return {
         "feature": feature,
