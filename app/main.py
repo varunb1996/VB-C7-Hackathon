@@ -53,6 +53,11 @@ def logout():
     return response
 
 
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
 @app.get("/me")
 def me(user: dict = Depends(get_current_user)):
     return user
