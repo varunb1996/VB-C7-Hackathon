@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: eval-copilot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: DB_PATH
+        value: /data/eval.db
+    disk:
+      name: db
+      mountPath: /data
+      sizeGB: 1
