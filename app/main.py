@@ -3,6 +3,9 @@ from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.db import init_db
 from app.auth import register_user, login_user, get_current_user
@@ -12,7 +15,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,6 +23,8 @@ app.add_middleware(
 
 init_db()
 app.include_router(features_router)
+
+IS_PROD = os.getenv("RAILWAY_ENVIRONMENT") is not None
 
 
 @app.post("/register")
@@ -32,7 +37,12 @@ def register(email: str = Form(...), password: str = Form(...)):
 def login(email: str = Form(...), password: str = Form(...)):
     token = login_user(email, password)
     response = JSONResponse({"ok": True, "user": {"email": email}})
-    response.set_cookie("token", token, httponly=True, samesite="lax")
+    response.set_cookie(
+        "token", token,
+        httponly=True,
+        samesite="lax",
+        secure=IS_PROD,
+    )
     return response
 
 
@@ -48,7 +58,7 @@ def me(user: dict = Depends(get_current_user)):
     return user
 
 
-# Serve React build — must be last
+# Serve React — must be last
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.exists(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
